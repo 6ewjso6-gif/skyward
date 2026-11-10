@@ -309,6 +309,15 @@ pub fn unmap_slot(maps: &SlotMaps) -> Result<()> {
 /// reads through an update's snapshots, from the snapshot already mapped
 /// where it was only unmounted.
 pub fn mount_one(slot: Slot, base_name: &str) -> Result<Mounted> {
+    // A phone that is not A/B mounts the partition itself, where its own
+    // table says it goes.
+    if !slot.is_ab() {
+        let at = skyward_block::fstab::mount(base_name)?;
+        return mounted_by_name()?
+            .into_iter()
+            .find(|m| m.partition == base_name)
+            .with_context(|| format!("{base_name} is mounted at {}, but not among the phone's partitions", at.display()));
+    }
     let super_dev = super_device();
     let md = skyward_lp::read(&super_dev, slot.number())?;
     let devices = block_devices(&md, &super_dev)?;
@@ -352,6 +361,14 @@ fn unmap(name: &str, point: &Path) -> Result<()> {
 /// unmounted: its snapshot stays mapped, for its merge to go on and for it
 /// to be mounted again.
 pub fn unmount_one(slot: Slot, base_name: &str) -> Result<()> {
+    if !slot.is_ab() {
+        let point = mounted_by_name()?
+            .into_iter()
+            .find(|m| m.partition == base_name)
+            .map(|m| m.mount_point)
+            .unwrap_or_else(|| mount_point(base_name));
+        return mount::umount_over(&point);
+    }
     let name = format!("{base_name}{}", slot.suffix());
     let point = mount_point(base_name);
     if !snapshots::is_snapshot(&name)? {
@@ -367,6 +384,9 @@ pub fn unmount_one(slot: Slot, base_name: &str) -> Result<()> {
 /// The slot's partitions that are mapped and show on their mount points, in
 /// the order they were mapped.
 pub fn mounted_partitions(slot: Slot) -> Result<Vec<Mounted>> {
+    if !slot.is_ab() {
+        return mounted_by_name();
+    }
     let mut found = Vec::new();
     for entry in fs::read_dir("/sys/block").context("read /sys/block")? {
         let entry = entry?;
@@ -387,6 +407,36 @@ pub fn mounted_partitions(slot: Slot) -> Result<Vec<Mounted>> {
     }
     found.sort_by_key(|(minor, _)| *minor);
     Ok(found.into_iter().map(|(_, m)| m).collect())
+}
+
+/// The partitions of a phone that is not A/B that are mounted, found by
+/// their names in `/dev/block/by-name` rather than in super's metadata.
+fn mounted_by_name() -> Result<Vec<Mounted>> {
+    let mut found = Vec::new();
+    let dir = fs::read_dir(BY_NAME).with_context(|| format!("read {BY_NAME}"))?;
+    for entry in dir {
+        let entry = entry?;
+        let name = entry.file_name().to_string_lossy().into_owned();
+        let device = entry.path();
+        // The phone's own table mounts a partition where it says; system
+        // goes there too, since the recovery runs from the ramdisk.
+        let mut shown = None;
+        let mut point = PathBuf::new();
+        for at in [Path::new("/").join(&name), mount_point(&name)] {
+            if let Some(s) = mount::visible(&at)? {
+                shown = Some(s);
+                point = at;
+                break;
+            }
+        }
+        let Some(shown) = shown else { continue };
+        let Ok(dev) = devnum(&device) else { continue };
+        if shown.device != dev {
+            continue;
+        }
+        found.push(Mounted { partition: name, device, mount_point: point, filesystem: shown.filesystem });
+    }
+    Ok(found)
 }
 
 /// Take the slot's mounted partitions away before an update writes over

@@ -20,6 +20,8 @@ pub use snapshots::Merge;
 pub enum Slot {
     A,
     B,
+    /// A phone that is not A/B: one copy of every partition, no suffix.
+    None,
 }
 
 impl Slot {
@@ -27,6 +29,7 @@ impl Slot {
         match self {
             Slot::A => "_a",
             Slot::B => "_b",
+            Slot::None => "",
         }
     }
 
@@ -34,6 +37,7 @@ impl Slot {
         match self {
             Slot::A => "A",
             Slot::B => "B",
+            Slot::None => "-",
         }
     }
 
@@ -42,6 +46,7 @@ impl Slot {
         match self {
             Slot::A => 0,
             Slot::B => 1,
+            Slot::None => 0,
         }
     }
 
@@ -49,13 +54,20 @@ impl Slot {
         match self {
             Slot::A => Slot::B,
             Slot::B => Slot::A,
+            Slot::None => Slot::None,
         }
+    }
+
+    /// Whether the phone keeps two copies of its partitions.
+    pub fn is_ab(self) -> bool {
+        self != Slot::None
     }
 
     pub fn from_suffix(s: &str) -> Option<Slot> {
         match s {
             "_a" => Some(Slot::A),
             "_b" => Some(Slot::B),
+            "" => Some(Slot::None),
             _ => None,
         }
     }
@@ -78,6 +90,12 @@ pub fn current_slot() -> Result<Option<Slot>> {
         None => Ok(None),
         Some(s) => Slot::from_suffix(&s).map(Some).ok_or_else(|| anyhow!("slot suffix {s:?}")),
     }
+}
+
+/// The slot the recovery works on: the booted one, or the one copy a phone
+/// that is not A/B keeps, which has no suffix.
+pub fn boot_slot() -> Result<Slot> {
+    Ok(current_slot()?.unwrap_or(Slot::None))
 }
 
 /// Virtual A/B update phase as libsnapshot records it. Anything but `None`

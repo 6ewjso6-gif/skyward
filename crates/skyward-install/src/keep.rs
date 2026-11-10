@@ -35,11 +35,16 @@ impl Kept {
     /// slot does not hold Skyward, as when it was started without being
     /// flashed.
     pub fn hold(dir: &Path, current: Slot) -> Result<Option<Kept>> {
+        if current == Slot::None {
+            // One recovery partition, with no other copy to fall back on.
+            let (held, image) = read(&image::device(dir, PARTITION, Slot::None))?;
+            return Ok(held.skyward.then(|| Kept { dir: dir.to_path_buf(), image, own: held.digest, before: [held, held] }));
+        }
         let (a, image_a) = read(&image::device(dir, PARTITION, Slot::A))?;
         let (b, image_b) = read(&image::device(dir, PARTITION, Slot::B))?;
         let (held, image) = match current {
             Slot::A => (a, image_a),
-            Slot::B => (b, image_b),
+            _ => (b, image_b),
         };
         Ok(held.skyward.then(|| Kept { dir: dir.to_path_buf(), image, own: held.digest, before: [a, b] }))
     }
@@ -48,6 +53,13 @@ impl Kept {
     /// the partitions hold once the install is done; `next` is the slot
     /// that starts next.
     pub fn wanted(&self, next: Slot) -> Result<Vec<Slot>> {
+        if next == Slot::None {
+            let (now, _) = read(&image::device(&self.dir, PARTITION, Slot::None))?;
+            return Ok(match now.digest != self.own {
+                true => vec![Slot::None],
+                false => Vec::new(),
+            });
+        }
         let (a, _) = read(&image::device(&self.dir, PARTITION, Slot::A))?;
         let (b, _) = read(&image::device(&self.dir, PARTITION, Slot::B))?;
         Ok(restore(self.before, [a, b], self.own, next))

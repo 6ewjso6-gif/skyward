@@ -443,7 +443,7 @@ fn main() -> Result<()> {
 }
 
 fn booted_slot() -> Result<skyward_vab::Slot> {
-    skyward_vab::current_slot()?.context("not an A/B device")
+    skyward_vab::boot_slot()
 }
 
 fn lp(super_dev: &Path, slot: Option<u32>) -> Result<()> {
@@ -526,8 +526,12 @@ fn bring_up(cfg: &DeviceConfig, slot: skyward_vab::Slot) -> Result<()> {
         mount_firmware(&firmware.partition)?;
     }
     for name in &cfg.partitions.mounted {
-        let at = skyward_block::fstab::mount(name)?;
-        skyward_sys::kmsg(&format!("{name} is mounted on {}", at.display()))?;
+        match skyward_block::fstab::mount(name) {
+            Ok(at) => skyward_sys::kmsg(&format!("{name} is mounted on {}", at.display()))?,
+            // A partition the phone's table does not name, or one that does
+            // not mount, leaves the rest of them to come up.
+            Err(e) => skyward_sys::kmsg(&format!("{name} is not mounted: {e:#}"))?,
+        }
     }
     for path in load_modules(cfg, &cfg.modules.load)? {
         skyward_sys::kmsg(&format!("loaded {}", path.display()))?;
@@ -787,6 +791,20 @@ fn recovery() -> Result<()> {
 /// after it is wiped, so the reason goes to the kernel log instead.
 #[cfg(target_os = "android")]
 fn prepare(cfg: &DeviceConfig, slot: skyward_vab::Slot) -> Result<()> {
+    // A phone that is not A/B has no super: its partitions are where the
+    // phone's own table says they are, and they are mounted from there.
+    if !slot.is_ab() {
+        for name in &cfg.partitions.mounted {
+            match skyward_block::fstab::mount(name) {
+                Ok(at) => skyward_sys::kmsg(&format!("{name} is mounted on {}", at.display()))?,
+                Err(e) => skyward_sys::kmsg(&format!("{name} is not mounted: {e:#}"))?,
+            }
+        }
+        if let Err(e) = bring_up(cfg, slot) {
+            skyward_sys::kmsg(&format!("devices not brought up: {e:#}"))?;
+        }
+        return Ok(());
+    }
     match skyward_vab::mount_partitions(slot) {
         Ok(mounts) => {
             for d in &mounts.damaged {

@@ -801,7 +801,8 @@ fn lines(from: impl Read, mut each: impl FnMut(&str) -> io::Result<()>) -> io::R
 
 fn flash_image(ctx: &Context, kind: ImageKind, size: u64) -> Result<Done> {
     let dir = Path::new(skyward_block::BY_NAME);
-    let partitions = image::partitions(kind, dir)?;
+    let slot = skyward_vab::boot_slot()?;
+    let partitions = image::partitions(kind, dir, slot)?;
     if partitions.is_empty() {
         return Ok(Done::Decided(Outcome::Refused(Refusal::NoPartition)));
     }
@@ -816,7 +817,12 @@ fn flash_image(ctx: &Context, kind: ImageKind, size: u64) -> Result<Done> {
     if [skyward_systems::store::BOOT, skyward_systems::store::INIT_BOOT].contains(&partition) {
         installed_boot_set()?;
     }
-    let devices: Vec<_> = slots.iter().map(|&slot| image::device(dir, partition, slot)).collect();
+    let devices: Vec<_> = if slot.is_ab() {
+        slots.iter().map(|&slot| image::device(dir, partition, slot)).collect()
+    } else {
+        // One copy of the partition, with no suffix and no choice of slot.
+        vec![image::device(dir, partition, Slot::None)]
+    };
     let mut file = BufReader::with_capacity(1 << 20, File::open(fuse::PACKAGE).context("open the package")?);
     let mut told: Option<Instant> = None;
     image::flash(&mut file, size, &devices, &mut |done, total| {
@@ -860,20 +866,26 @@ fn run_script(ctx: &mut Context, size: u64) -> Result<Done> {
             Ok(other) => bail!("a script waiting to be agreed to was told {other:?}"),
         }
     }
-    let slot = skyward_vab::current_slot()?.context("not an A/B phone")?;
+    let slot = skyward_vab::boot_slot()?;
     extract_script()?;
     shell_at_sbin()?;
     let kept = hold(ctx, slot)?;
-    installed_boot_set()?;
+    if slot.is_ab() {
+        installed_boot_set()?;
+    }
     detach_once(ctx)?;
     // While an update is in flight, the slot's partitions in super are its
-    // and stay unmapped.
-    let mapped = match skyward_vab::snapshot_state()? {
-        SnapshotState::None => skyward_vab::map_slot(slot)?,
-        state => {
-            let _ = kmsg(&format!("install: the slot's partitions stay unmapped while an update is in flight ({state:?})"));
-            SlotMaps::default()
+    // and stay unmapped. A phone that is not A/B has no super to map.
+    let mapped = if slot.is_ab() {
+        match skyward_vab::snapshot_state()? {
+            SnapshotState::None => skyward_vab::map_slot(slot)?,
+            state => {
+                let _ = kmsg(&format!("install: the slot's partitions stay unmapped while an update is in flight ({state:?})"));
+                SlotMaps::default()
+            }
         }
+    } else {
+        SlotMaps::default()
     };
     let mounted = skyward_block::mount::mount_ids()?;
     let ran = run_binary(ctx);
@@ -883,7 +895,7 @@ fn run_script(ctx: &mut Context, size: u64) -> Result<Done> {
     // What the script wrote over goes back however it ended, and so does
     // the recovery of the slot that starts next, which a package that
     // installs to the other slot switches to.
-    if let Some(kept) = &kept {
+    if let (Some(kept), true) = (&kept, slot.is_ab()) {
         reflash(ctx, kept, skyward_vab::boot::next_slot().context("ask which slot starts next"));
     }
     let (code, wipe_cache) = ran?;

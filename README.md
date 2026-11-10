@@ -130,6 +130,13 @@ stock recovery image of each from `images/recovery.img` in its fastboot
 package: `skyward-pack stock` reads the payload of a full update package and
 does not apply to them. None of these images has been tried on a phone yet.
 
+They have no super and no slots, so A/B update packages, fastbootd, switching
+slots and the second system do not work on them; partitions are read and
+written by name, without an `_a` or `_b` suffix. Flashing partition images,
+running a zip's install script, backup and restore, and the file manager work
+as on any other phone. The recovery partition is 64 MiB on the MIX 2 and the
+MIX 2S, and 128 MiB on the K20 Pro.
+
 ## Installing Skyward
 
 Skyward needs an unlocked bootloader. Download the zip for your phone from
@@ -247,9 +254,9 @@ target/release/skyward-pack recovery \
 
 The stock recovery image of the MIX 2, MIX 2S and K20 Pro is not in a full
 update package with a payload, but in `images/recovery.img` of each phone's
-fastboot package. Their recovery partition is 64 MiB; when the image taken
-out does not end in an AVB footer, give the partition's size with
-`--partition-size`:
+fastboot package. When the image taken out does not end in an AVB footer,
+give the partition's size with `--partition-size` (67108864 for the MIX 2 and
+the MIX 2S, 134217728 for the K20 Pro):
 
 ```sh
 target/release/skyward-pack recovery \

@@ -208,6 +208,27 @@ const BOOT_PROPS: &str = "ro.boot.";
 /// after them, as Xiaomi's odm imports what each hardware version sets; so
 /// they come first here too, the same in a recovery as in the system.
 pub fn installed_props(slot: Slot) -> Result<HashMap<String, String>> {
+    // A phone that is not A/B mounts its partitions where the phone's own
+    // table puts them, so their property files are read where they are.
+    if !slot.is_ab() {
+        let mut props: HashMap<String, String> = skyward_sys::props(BOOT_PROPS).into_iter().collect();
+        for path in [
+            "/system/build.prop",
+            "/vendor/default.prop",
+            "/vendor/build.prop",
+            "/product/etc/build.prop",
+            "/odm/etc/build.prop",
+        ] {
+            match fs::metadata(path) {
+                Err(e) if e.kind() == ErrorKind::NotFound => continue,
+                Err(e) => return Err(e).with_context(|| format!("stat {path}")),
+                Ok(_) => {}
+            }
+            rsproperties::load_properties_from_file(Path::new(path), None, "u:r:init:s0", &mut props)
+                .with_context(|| format!("read {path}"))?;
+        }
+        return Ok(props);
+    }
     let base = |m: &skyward_vab::Mounted| -> String {
         m.partition.strip_suffix(slot.suffix()).expect("mounted partitions carry the slot suffix").to_string()
     };

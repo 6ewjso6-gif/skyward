@@ -19,16 +19,23 @@ diagonal = 5.99
 [modules]
 sources = ["vendor"]
 
-# The phone's own table mounts persist at /persist, which its recovery
-# leaves unmounted; the sensors' calibration and the WLAN's MAC address are
-# there.
+# The recovery runs from the ramdisk, so the system partition is free to
+# be mounted where the phone's own table puts it: its build properties say
+# which system is installed, and the file manager browses it.
 [partitions]
-mounted = ["persist"]
+mounted = ["system"]
 
 # The baseband's settings and the sensors' calibration, as every Xiaomi
 # phone of this generation keeps them.
 [backup]
 efs = ["modemst1", "modemst2", "fsg", "fsc", "persist"]
+
+# The MIUI build the recovery is made on, and the package it comes from.
+[stock]
+version = "V12.0.1.0.PDECNXM"
+package = "https://bigota.d.miui.com/V12.0.1.0.PDECNXM/miui_MIMIX2_V12.0.1.0.PDECNXM_ba60e4bd60_9.0.zip"
+recovery = "514efae2d1d1caedf05d2f628aebb57268a89aa630ac4b7e037ee2a94ed7abf2"
+partition_size = 67108864
 
 [update]
 server = "https://update.miui.com/updates/miotaV3.php"

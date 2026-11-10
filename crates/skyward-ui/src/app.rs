@@ -987,6 +987,11 @@ impl Pick {
 
     /// The slots this means on a phone running from `current`.
     pub fn slots(self, current: Slot) -> Vec<Slot> {
+        // A phone that is not A/B has one copy of each partition, and every
+        // choice names it.
+        if !current.is_ab() {
+            return vec![Slot::None];
+        }
         match self {
             Pick::Current => vec![current],
             Pick::Other => vec![current.other()],

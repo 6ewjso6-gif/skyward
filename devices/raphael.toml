@@ -19,11 +19,11 @@ diagonal = 6.39
 [modules]
 sources = ["vendor"]
 
-# The phone's own table mounts persist at /mnt/vendor/persist, which its
-# recovery leaves unmounted; the sensors' calibration and the WLAN's MAC
-# address are there.
+# The recovery runs from the ramdisk, so the system partition is free to
+# be mounted where the phone's own table puts it: its build properties say
+# which system is installed, and the file manager browses it.
 [partitions]
-mounted = ["persist"]
+mounted = ["system"]
 
 # The baseband's settings and the sensors' calibration, as every Xiaomi
 # phone of this generation keeps them.

@@ -178,16 +178,23 @@ pub fn device(dir: &Path, name: &str, slot: Slot) -> PathBuf {
     dir.join(format!("{name}{}", slot.suffix()))
 }
 
-/// The partitions `kind` fits that this phone has in both slots, among the
-/// links in `dir`, the likeliest first.
-pub fn partitions(kind: ImageKind, dir: &Path) -> Result<Vec<&'static str>> {
+/// The partitions `kind` fits that this phone has, among the links in `dir`,
+/// the likeliest first: in both slots on an A/B phone, once on one that is
+/// not.
+pub fn partitions(kind: ImageKind, dir: &Path, slot: Slot) -> Result<Vec<&'static str>> {
     let mut found = Vec::new();
     for name in kind.partitions() {
-        let mut has = true;
-        for slot in [Slot::A, Slot::B] {
-            let path = device(dir, name, slot);
-            has &= path.try_exists().with_context(|| format!("look for {}", path.display()))?;
-        }
+        let has = if slot.is_ab() {
+            let mut has = true;
+            for slot in [Slot::A, Slot::B] {
+                let path = device(dir, name, slot);
+                has &= path.try_exists().with_context(|| format!("look for {}", path.display()))?;
+            }
+            has
+        } else {
+            let path = device(dir, name, Slot::None);
+            path.try_exists().with_context(|| format!("look for {}", path.display()))?
+        };
         if has {
             found.push(*name);
         }
@@ -415,9 +422,21 @@ mod tests {
             std::fs::File::create(dir.path().join(name)).unwrap();
         }
         let both = ImageKind::Boot { kernel: true, ramdisk: Ramdisk::Recovery };
-        assert_eq!(partitions(both, dir.path()).unwrap(), ["recovery", "boot"]);
-        assert_eq!(partitions(ImageKind::Vbmeta, dir.path()).unwrap(), ["vbmeta"]);
-        assert!(partitions(ImageKind::Dtbo, dir.path()).unwrap().is_empty());
+        assert_eq!(partitions(both, dir.path(), Slot::A).unwrap(), ["recovery", "boot"]);
+        assert_eq!(partitions(ImageKind::Vbmeta, dir.path(), Slot::A).unwrap(), ["vbmeta"]);
+        assert!(partitions(ImageKind::Dtbo, dir.path(), Slot::A).unwrap().is_empty());
+    }
+
+    #[test]
+    fn a_phone_that_is_not_ab_offers_its_one_copy() {
+        let dir = tempfile::tempdir().unwrap();
+        for name in ["boot", "recovery", "vbmeta"] {
+            std::fs::File::create(dir.path().join(name)).unwrap();
+        }
+        let both = ImageKind::Boot { kernel: true, ramdisk: Ramdisk::Recovery };
+        assert_eq!(partitions(both, dir.path(), Slot::None).unwrap(), ["recovery", "boot"]);
+        assert_eq!(partitions(ImageKind::Vbmeta, dir.path(), Slot::None).unwrap(), ["vbmeta"]);
+        assert!(partitions(ImageKind::Dtbo, dir.path(), Slot::None).unwrap().is_empty());
     }
 
     /// A partition of `size` bytes filled with 0xAA, so untouched bytes

@@ -123,6 +123,11 @@ MIX 2、MIX 2S 和 K20 Pro 是 A-only 机型，没有动态分区，它们的 re
 `images/recovery.img` 取，`skyward-pack stock` 只支持带 payload 的完整包，
 不适用于它们。这些镜像还没有在真机上试过。
 
+它们没有 super，也没有 A/B 槽位，所以 A/B 完整更新包、fastbootd、切换槽位和
+双系统都用不了；分区按名字直接读写，不带 `_a` / `_b` 后缀。刷写分区镜像、运行
+刷机包的安装脚本、备份恢复和文件管理照常。MIX 2 和 MIX 2S 的 recovery 分区是
+64 MiB，K20 Pro 是 128 MiB。
+
 ## 安装 Skyward
 
 Skyward 需要已解锁的 bootloader。从 [Releases](https://github.com/kirklin/skyward/releases) 下载对应机型的 zip，每个文件都标有机型和代号，例如 Xiaomi 17 Ultra (nezha)。使用 `SHA256SUMS` 核对并解压之后，在手机处于 fastboot 模式的时候，把其中的镜像刷入当前运行槽位的 recovery 分区：
@@ -192,8 +197,9 @@ target/release/skyward-pack recovery \
 ```
 
 MIX 2、MIX 2S 和 K20 Pro 的原厂 recovery 镜像不在带 payload 的完整更新包里，
-而在各自 fastboot 线刷包的 `images/recovery.img` 中。它们的 recovery 分区是
-64 MiB，取出的镜像不以 AVB footer 结尾时，用 `--partition-size` 给出分区大小：
+而在各自 fastboot 线刷包的 `images/recovery.img` 中。取出的镜像不以 AVB footer
+结尾时，用 `--partition-size` 给出分区大小（MIX 2、MIX 2S 是 67108864，K20 Pro
+是 134217728）：
 
 ```sh
 target/release/skyward-pack recovery \
